@@ -27,7 +27,23 @@ function getUser(userId, name) {
 const rooms = new Map();   // roomId -> room
 const clients = new Map(); // ws -> { userId, roomId }
 
-function todayIndex() { return Math.floor(Date.now() / 86400000) % PUZZLES.length; }
+// Preguntas al azar sin repetir para los jugadores de la partida.
+// Cada jugador recuerda las que ya vio; si ambos ya vieron todas, se reinicia.
+const seen = new Map(); // userId -> Set de índices ya jugados
+function randomPuzzle(userIds) {
+  const sets = userIds.map(id => {
+    if (!seen.has(id)) seen.set(id, new Set());
+    return seen.get(id);
+  });
+  let pool = PUZZLES.map((_, i) => i).filter(i => !sets.some(s => s.has(i)));
+  if (pool.length === 0) {
+    sets.forEach(s => s.clear());
+    pool = PUZZLES.map((_, i) => i);
+  }
+  const idx = pool[Math.floor(Math.random() * pool.length)];
+  sets.forEach(s => s.add(idx));
+  return PUZZLES[idx];
+}
 function newId() { return Math.random().toString(36).slice(2, 8).toUpperCase(); }
 function sendTo(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 function roomOf(ws) { const c = clients.get(ws); return c && c.roomId ? rooms.get(c.roomId) : null; }
@@ -57,6 +73,7 @@ function viewFor(room, userId) {
     v.clue = room.puzzle.clue;
     v.author = room.puzzle.author;
     v.length = room.puzzle.answer.length;
+    v.context = room.puzzle.context || null;
   }
   if (room.status === 'done') {
     v.answer = room.puzzle.answer;
@@ -94,7 +111,7 @@ function startCountdown(room) {
   for (const p of room.players) db.users[p.userId].points -= room.bet;
   save();
   room.status = 'countdown';
-  room.puzzle = PUZZLES[todayIndex()];
+  room.puzzle = randomPuzzle(room.players.map(p => p.userId));
   room.hints = [];
   for (const p of room.players) p.wrong = 0;
   broadcast(room);
@@ -144,7 +161,7 @@ function handle(ws, m) {
       if (!c) return;
       if (inActiveGame(ws)) return sendTo(ws, { type: 'error', message: 'Termina tu partida primero' });
       leaveRoom(ws);
-      const room = { id: newId(), bet: 0, solo: true, status: 'playing', players: [], hints: [], puzzle: PUZZLES[todayIndex()], winnerId: null, reason: '', timer: null };
+      const room = { id: newId(), bet: 0, solo: true, status: 'playing', players: [], hints: [], puzzle: randomPuzzle([c.userId]), winnerId: null, reason: '', timer: null };
       rooms.set(room.id, room);
       addPlayer(room, ws, c.userId);
       broadcast(room);
@@ -284,6 +301,13 @@ function onClose(ws) {
   const p = room.players.find(x => x.ws === ws);
   if (!p) return; // ya se reconectó con otro socket
 
+  // Partida individual: al cerrar la app se descarta (no queda abierta para la próxima vez)
+  if (room.solo) {
+    clearTimeout(room.timer);
+    rooms.delete(room.id);
+    return;
+  }
+
   if (room.status === 'lobby') {
     room.players = room.players.filter(x => x.ws !== ws);
     if (room.players.length === 0) rooms.delete(room.id);
@@ -298,6 +322,11 @@ function onClose(ws) {
 const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent(req.url.split('?')[0]);
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  // Verificación de la versión desplegada: abre https://tu-app.onrender.com/version
+  if (urlPath === '/version') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ pistas: PUZZLES.length, seleccion: 'aleatoria-sin-repetir', version: 3 }));
+  }
   const full = path.join(PUBLIC_DIR, rel);
   if (!full.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end(); }
   fs.readFile(full, (err, data) => {
