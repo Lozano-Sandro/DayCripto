@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Críptico</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b0b0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Críptico">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<style>
+  :root { --bg:#0b0b0c; --panel:#141417; --line:#2a2a30; --text:#f2f2f2; --muted:#8a8a93;
+          --accent:#e60000; --gold:#f5b400; --ok:#1fbf75; --bad:#ff4d4d; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         display:flex; justify-content:center; padding:16px; }
+  #app { width:100%; max-width:480px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .center { text-align:center; }
+  .row { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:14px; }
+  .muted { color:var(--muted); font-size:13px; margin:6px 0; }
+  .big { font-size:20px; font-weight:bold; text-align:center; margin:12px 0; }
+  .pts { color:var(--gold); font-weight:bold; }
+  h1 { margin:6px 0 10px; font-size:26px; }
+  h2 { font-size:18px; margin:10px 0; }
+  input { width:100%; padding:14px; border-radius:8px; border:1px solid var(--line);
+          background:#000; color:var(--text); font-size:16px; margin:10px 0; }
+  button { width:100%; padding:14px; border-radius:8px; border:1px solid var(--line);
+           background:#1c1c21; color:var(--text); font-size:15px; cursor:pointer; margin-top:8px; }
+  button:disabled { opacity:.4; }
+  button.primary { background:var(--accent); border:none; color:#000; font-weight:bold; }
+  button.danger { background:#2a0f0f; border-color:#5a1f1f; color:#ff8080; }
+  button.ghost { background:transparent; color:var(--muted); }
+  .bets { display:flex; gap:8px; }
+  .bets button { flex:1; }
+  .warn { color:var(--gold); font-size:12px; margin-top:14px; text-align:center; }
+  .players { list-style:none; padding:0; margin:8px 0; }
+  .players li { padding:8px 0; border-bottom:1px solid var(--line); }
+  .share { display:flex; flex-direction:column; gap:4px; }
+  .share input { font-size:12px; margin:6px 0; }
+  a.wa { display:block; text-align:center; background:#25d366; color:#000; font-weight:bold;
+         padding:14px; border-radius:8px; text-decoration:none; margin-top:4px; }
+  .clue { background:#000; border:1px solid var(--line); border-radius:8px; padding:18px;
+          text-align:center; font-size:18px; line-height:1.5; margin:8px 0; }
+  .boxes { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin:16px 0; }
+  .box { width:44px; height:52px; background:#000; border:1px solid var(--line);
+         border-bottom:2px solid #3a3a40; border-radius:6px; display:flex; align-items:center;
+         justify-content:center; font-size:22px; font-weight:bold; }
+  .btns { display:flex; gap:8px; }
+  .btns button { margin-top:0; }
+  .hints { list-style:none; padding:0; margin:12px 0; color:var(--gold); font-size:14px; }
+  .hints li { padding:4px 0; }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(120px);
+           background:#222; color:#fff; padding:12px 18px; border-radius:8px; transition:.3s;
+           font-size:14px; max-width:90%; text-align:center; }
+  #toast.show { transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+
+<script>
+// En la APK pon aquí la URL de tu servidor, por ejemplo 'https://criptico.tudominio.com'.
+// Vacío = mismo origen (cuando abres la web desde el propio servidor).
+const SERVER_URL = '';
+const base = SERVER_URL || location.origin;
+const WS_URL = base.replace(/^http/, 'ws') + '/ws';
+
+let me = JSON.parse(localStorage.getItem('critico_me') || 'null') || { userId: null, name: '' };
+let user = null;   // { userId, name, points }
+let room = null;   // vista de la sala que envía el servidor
+let ws = null;
+let guess = '';
+let pendingRoom = new URLSearchParams(location.search).get('room');
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+// ---------- Conexión ----------
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => { if (me.userId) hello(); };
+  ws.onclose = () => setTimeout(connect, 1500);
+  ws.onmessage = ev => onMsg(JSON.parse(ev.data));
+}
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function hello() { send({ type: 'hello', userId: me.userId, name: me.name }); }
+
+function onMsg(m) {
+  if (m.type === 'me') {
+    user = m.user;
+    const rid = pendingRoom || localStorage.getItem('critico_room');
+    pendingRoom = null;
+    if (rid) send({ type: 'join', roomId: rid });
+    render();
+  } else if (m.type === 'room') {
+    if (m.room && room && m.room.status === 'playing' && room.status !== 'playing') guess = '';
+    room = m.room;
+    if (room) localStorage.setItem('critico_room', room.id);
+    else localStorage.removeItem('critico_room');
+    render();
+  } else if (m.type === 'error') {
+    if (m.code === 'NO_ROOM') {
+      room = null;
+      localStorage.removeItem('critico_room');
+      render();
+    }
+    toast(m.message);
+  }
+}
+
+// ---------- Vistas ----------
+function render() {
+  const app = $('app');
+  if (!me.userId || !me.name) { app.innerHTML = loginView(); return; }
+  if (!user) { app.innerHTML = '<div class="card center">Conectando…</div>'; return; }
+  if (!room) app.innerHTML = homeView();
+  else if (room.status === 'lobby' || room.status === 'countdown') app.innerHTML = lobbyView();
+  else app.innerHTML = gameView();
+}
+
+function loginView() {
+  return `<div class="card center">
+    <h1>Críptico</h1>
+    <p class="muted">Elige tu nombre para empezar</p>
+    <input id="name" maxlength="20" placeholder="Tu nombre" autocomplete="off">
+    <button class="primary" onclick="login()">Entrar</button>
+  </div>`;
+}
+
+function homeView() {
+  return `<div class="card">
+    <div class="row"><span>Hola, <b>${esc(user.name)}</b></span><span class="pts">${user.points} pts</span></div>
+    <h2>Retar a un compañero</h2>
+    <p class="muted">Elige cuánto apuestas. El primero en resolver se lleva el bote.</p>
+    <div class="bets">
+      ${[10, 25, 50].map(b => `<button onclick="createRoom(${b})" ${user.points < b ? 'disabled' : ''}>${b} pts</button>`).join('')}
+    </div>
+    <p class="warn">⚠️ En el reto, si sales de la app durante la partida, pierdes automáticamente.</p>
+    <h2 style="margin-top:22px">Jugar solo</h2>
+    <p class="muted">Práctica sin apostar ni perder puntos. Tienes 3 intentos y pistas.</p>
+    <button onclick="playSolo()">Jugar el críptico del día</button>
+  </div>`;
+}
+
+function lobbyView() {
+  const mine = room.players.find(p => p.userId === user.userId);
+  const link = `${base}/?room=${room.id}`;
+  const wa = 'https://wa.me/?text=' + encodeURIComponent(`¡Te reto a un críptico por ${room.bet} puntos! Entra aquí: ${link}`);
+  const waiting = room.players.length < 2;
+  const counting = room.status === 'countdown';
+  const iAmReady = !!(mine && mine.ready);
+  return `<div class="card">
+    <div class="row"><span>Apuesta: <b>${room.bet} pts</b></span><span>Bote: <b class="pts">${room.pot} pts</b></span></div>
+    <h2>Sala ${esc(room.id)}</h2>
+    <ul class="players">
+      ${room.players.map(p => `<li>${esc(p.name)} ${p.ready ? '✅ listo' : '⏳ esperando'}</li>`).join('')}
+    </ul>
+    ${waiting ? `<div class="share">
+      <p class="muted">Esperando a tu rival. Envíale el reto:</p>
+      <input readonly value="${esc(link)}" onclick="this.select()">
+      <a class="wa" href="${wa}">Enviar por WhatsApp</a>
+    </div>` : ''}
+    ${counting ? '<p class="big">¡Empieza en unos segundos!</p>' : ''}
+    <button class="primary" onclick="ready()" ${waiting || iAmReady || counting ? 'disabled' : ''}>
+      ${iAmReady ? 'Esperando al rival…' : 'Iniciar'}
+    </button>
+    <button class="ghost" onclick="leave()" ${counting ? 'disabled' : ''}>Salir de la sala</button>
+    <p class="warn">Al empezar se descuenta la apuesta a ambos. Si sales de la app durante la partida, pierdes.</p>
+  </div>`;
+}
+
+function boxesHTML(L) {
+  return Array.from({ length: L }, (_, i) => `<div class="box">${esc(guess[i] || '')}</div>`).join('');
+}
+
+function gameView() {
+  if (room.status === 'done') {
+    const won = room.winnerId === user.userId;
+    return `<div class="card center">
+      <h1>${room.solo ? (won ? '🎉 ¡Resuelto!' : '😞 Sin acierto') : (won ? '🏆 ¡Ganaste!' : '😞 Perdiste')}</h1>
+      <p>${esc(room.reason)}</p>
+      <p>La respuesta era <b>${esc(room.answer)}</b></p>
+      ${room.solo ? '' : `<p class="big">${won ? '+' + room.bet : '-' + room.bet} pts</p>`}
+      <button class="primary" onclick="backHome()">Volver al inicio</button>
+    </div>`;
+  }
+  const L = room.length;
+  const mine = room.players.find(p => p.userId === user.userId);
+  const rival = room.players.find(p => p.userId !== user.userId);
+  return `<div class="card">
+    <div class="row"><span>${room.solo ? 'Práctica (sin puntos)' : 'Bote: <b class="pts">' + room.pot + ' pts</b>'}</span><span class="muted">${L} letras</span></div>
+    <div class="row muted">
+      <span>Tus intentos: <b>${mine ? mine.attemptsLeft : 3}</b></span>
+      <span>${!room.solo && rival ? esc(rival.name) + ': ' + rival.attemptsLeft + ' intentos' : ''}</span>
+    </div>
+    <div class="clue">${esc(room.clue)}</div>
+    <div class="muted center">Autor: ${esc(room.author)}</div>
+    <div class="boxes" id="boxes">${boxesHTML(L)}</div>
+    <input id="guess" maxlength="${L}" autocomplete="off" autocapitalize="characters"
+           value="${esc(guess)}" oninput="onGuess(this)"
+           onkeydown="if(event.key==='Enter')checkGuess()">
+    <div class="btns">
+      <button onclick="askHint()" ${room.hints.length >= 3 ? 'disabled' : ''}>Pista (${room.hints.length}/3)</button>
+      <button class="danger" onclick="giveUp()">Rendirse</button>
+    </div>
+    <button class="primary" onclick="checkGuess()">Comprobar</button>
+    <ul class="hints">${room.hints.map(h => `<li>💡 ${esc(h)}</li>`).join('')}</ul>
+    <p class="warn">Tienes 3 intentos fallidos. Al intentar por cuarta vez pierdes. Si sales de la app o minimizas, también pierdes.</p>
+  </div>`;
+}
+
+// ---------- Acciones ----------
+function login() {
+  const n = $('name').value.trim();
+  if (!n) return toast('Escribe tu nombre');
+  me = {
+    userId: me.userId || (Date.now().toString(36) + Math.random().toString(36).slice(2)),
+    name: n
+  };
+  localStorage.setItem('critico_me', JSON.stringify(me));
+  hello();
+}
+function playSolo() { send({ type: 'solo' }); }
+function createRoom(bet) {
+  if (user.points < bet) return toast('No tienes puntos suficientes');
+  send({ type: 'create', bet });
+}
+function ready() { send({ type: 'ready' }); }
+function askHint() { send({ type: 'hint' }); }
+function giveUp() {
+  const txt = room && room.solo ? '¿Rendirte?' : '¿Rendirte? Perderás la apuesta.';
+  if (confirm(txt)) send({ type: 'forfeit' });
+}
+function leave() { send({ type: 'leave' }); backHome(); }
+function backHome() {
+  if (room && room.solo) send({ type: 'leave' });
+  room = null;
+  guess = '';
+  localStorage.removeItem('critico_room');
+  hello(); // refresca los puntos
+  render();
+}
+function onGuess(el) {
+  guess = el.value.toUpperCase().replace(/[^A-ZÑ]/g, '').slice(0, room.length);
+  el.value = guess;
+  $('boxes').innerHTML = boxesHTML(room.length);
+}
+function checkGuess() {
+  if (guess.length < room.length) return toast('Faltan letras');
+  send({ type: 'guess', letters: guess });
+}
+
+// ---------- Detección de salida de la app ----------
+function onLeaveApp() {
+  if (room && (room.status === 'countdown' || room.status === 'playing')) {
+    send({ type: 'left' });
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) onLeaveApp(); });
+window.addEventListener('blur', onLeaveApp);
+// En Capacitor (APK) el evento de la plataforma es más fiable
+if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+  window.Capacitor.Plugins.App.addListener('appStateChange', s => { if (!s.isActive) onLeaveApp(); });
+}
+
+// ---------- Utilidades ----------
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+connect();
+render();
+
+// Registra el service worker (requiere HTTPS o localhost)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
