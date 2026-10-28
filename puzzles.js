@@ -90,7 +90,27 @@ const PUZZLES = [
     hint1: "Anagrama de 'ordena'.", hint2: "Poner elementos bonitos sobre algo." },
   { context: "En el registro de la cocina hay una lista de compras. Una palabra aparece dos veces, y solo una tiene el significado que buscamos.",
     clue: "Papas sin la última letra: tubérculo o sumo pontífice (4)", answer: "PAPA", author: AUTHOR,
-    hint1: "Quita la última letra de 'papas'.", hint2: "Tiene dos significados: un alimento y una autoridad religiosa." }
+    hint1: "Quita la última letra de 'papas'.", hint2: "Tiene dos significados: un alimento y una autoridad religiosa." },
+
+  // ---- Casos especiales difíciles: varios pasos ----
+  { context: "En la casa del sospechoso encontramos una nota escrita al revés. Lea la palabra del otro lado, luego revise qué queda.",
+    clue: "Rama al revés, sin su última letra: mujer que cuida una casa o a los niños (3)", answer: "AMA", author: AUTHOR,
+    hint1: "Primero lea la palabra al revés, luego quite la última letra.", hint2: "Mujer que se encarga de una casa o de los niños de una familia." },
+  { context: "El mensaje está firmado con una palabra corta. Al leerla de derecha a izquierda, cambia de significado.",
+    clue: "Solo al revés, sin su primera letra: artículo que marca el plural (3)", answer: "LOS", author: AUTHOR,
+    hint1: "Primero lea al revés, luego quite la primera letra.", hint2: "Artículo masculino plural." },
+  { context: "Un camión salió del aserradero con un cargamento sin registrar. El nombre del destino aparece con una letra de más.",
+    clue: "Malta sin la primera letra, revuelta: corte de árboles (4)", answer: "TALA", author: AUTHOR,
+    hint1: "Dos pasos: quitar la primera letra y luego reordenar.", hint2: "Se hace con hacha o motosierra." },
+  { context: "Un testigo describió un animal que se escondía en el almacén. La pista está en la palabra del inventario.",
+    clue: "Carta sin la primera letra, revuelta: roedor de cola larga (4)", answer: "RATA", author: AUTHOR,
+    hint1: "Dos pasos: quitar la primera letra y luego reordenar.", hint2: "Animal pequeño que vive en las alcantarillas." },
+  { context: "La nota del detenido habla de una persona especial. Revise la palabra del título, no el contenido.",
+    clue: "Trama sin la primera letra, revuelta: querer mucho (4)", answer: "AMAR", author: AUTHOR,
+    hint1: "Dos pasos: quitar la primera letra y luego reordenar.", hint2: "Sentir un afecto profundo por alguien." },
+  { context: "Se escuchó un ruido fuerte en el edificio. El informe de la policía usa una palabra que no es la que parece.",
+    clue: "Grito sin la primera letra, revuelto: disparo de un arma (4)", answer: "TIRO", author: AUTHOR,
+    hint1: "Dos pasos: quitar la primera letra y luego reordenar.", hint2: "Acción de lanzar un proyectil con un arma." }
 ];
 
 module.exports = { PUZZLES };
