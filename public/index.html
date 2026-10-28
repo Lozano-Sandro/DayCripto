@@ -53,6 +53,11 @@
   .btns button { margin-top:0; }
   .hints { list-style:none; padding:0; margin:12px 0; color:var(--gold); font-size:14px; }
   .hints li { padding:4px 0; }
+  .case { background:#000; border:1px solid var(--line); border-left:3px solid var(--accent);
+          border-radius:8px; padding:12px 14px; margin:8px 0; font-size:14px; line-height:1.5; }
+  .case-tag { color:var(--accent); font-size:11px; font-weight:bold; letter-spacing:1px;
+              text-transform:uppercase; margin-bottom:6px; }
+  .case p { margin:0; color:#d6d6dc; }
   #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(120px);
            background:#222; color:#fff; padding:12px 18px; border-radius:8px; transition:.3s;
            font-size:14px; max-width:90%; text-align:center; }
@@ -100,7 +105,8 @@ function onMsg(m) {
   } else if (m.type === 'room') {
     if (m.room && room && m.room.status === 'playing' && room.status !== 'playing') guess = '';
     room = m.room;
-    if (room) localStorage.setItem('critico_room', room.id);
+    // Una partida terminada no se vuelve a abrir al recargar
+    if (room && room.status !== 'done') localStorage.setItem('critico_room', room.id);
     else localStorage.removeItem('critico_room');
     render();
   } else if (m.type === 'error') {
@@ -186,7 +192,10 @@ function gameView() {
       <p>${esc(room.reason)}</p>
       <p>La respuesta era <b>${esc(room.answer)}</b></p>
       ${room.solo ? '' : `<p class="big">${won ? '+' + room.bet : '-' + room.bet} pts</p>`}
-      <button class="primary" onclick="backHome()">Volver al inicio</button>
+      ${room.solo
+        ? '<button class="primary" onclick="playAgain()">Jugar otra vez</button>'
+        : '<button class="primary" onclick="backHome()">Volver a retar</button>'}
+      <button class="ghost" onclick="backHome()">Volver al inicio</button>
     </div>`;
   }
   const L = room.length;
@@ -198,6 +207,7 @@ function gameView() {
       <span>Tus intentos: <b>${mine ? mine.attemptsLeft : 3}</b></span>
       <span>${!room.solo && rival ? esc(rival.name) + ': ' + rival.attemptsLeft + ' intentos' : ''}</span>
     </div>
+    ${room.context ? `<div class="case"><div class="case-tag">⚠ Caso especial</div><p>${esc(room.context)}</p></div>` : ''}
     <div class="clue">${esc(room.clue)}</div>
     <div class="muted center">Autor: ${esc(room.author)}</div>
     <div class="boxes" id="boxes">${boxesHTML(L)}</div>
@@ -226,6 +236,7 @@ function login() {
   hello();
 }
 function playSolo() { send({ type: 'solo' }); }
+function playAgain() { backHome(); send({ type: 'solo' }); }
 function createRoom(bet) {
   if (user.points < bet) return toast('No tienes puntos suficientes');
   send({ type: 'create', bet });
